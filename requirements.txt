@@ -1,0 +1,3 @@
+flask
+flask-socketio
+eventlet  # или gevent, или python-engineio-uwsgi, в зависимости от способа развертывания

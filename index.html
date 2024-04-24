@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Chat App</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+</head>
+<body>
+    <div class="chat-container">
+        <div class="sidebar">
+            <div class="login-container">
+                <input type="text" id="username-input" placeholder="Enter your username">
+                <button onclick="setUsername()">Set Username</button>
+
+            </div>
+          <div class="lifetime-container" style="display: none;">
+    <select id="lifetime-select">
+        <option value="">Выберите время жизни...</option>
+        <option value="2">2 секунд</option>
+        <option value="5">5 секунд</option>
+        <option value="10">10 секунд</option>
+        <option value="15">15 секунд</option>
+        <option value="30">30 секунд</option>
+        <option value="60">1 минута</option>
+        <option value="180">3 минуты</option>
+        <option value="300">5 минут</option>
+        <option value="600">10 минут</option>
+        <option value="900">15 минут</option>
+        <option value="1800">30 минут</option>
+        <option value="3600">1 час</option>
+    </select>
+    <button onclick="setMessageLifetime()" disabled>Set Lifetime</button>
+</div>
+            <button id="clear-messages-btn" onclick="clearMessages()" style="display: none;">Удалить все сообщения</button>
+        </div>
+        <div class="chat-window">
+            <div id="messages"></div>
+            <div class="input-container">
+                <div class="message-input-container">
+    <input type="text" id="message-input" placeholder="Enter your message" onkeydown="handleKeyDown(event)" disabled>
+    <label for="image-input" class="image-input-label">
+        <i class="fas fa-paperclip"></i>
+    </label>
+    <input type="file" id="image-input" accept="image/*" disabled style="display: none;" onchange="showFileUploadIndicator()">
+    <span id="file-upload-indicator" style="display: none;"><i class="fas fa-check"></i></span>
+</div>
+                <button onclick="sendMessage()" disabled>Send</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        const socket = io();
+        const messagesDiv = document.getElementById('messages');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.querySelector('button[onclick="sendMessage()"]');
+        const lifetimeSelect = document.getElementById('lifetime-select');
+        const lifetimeInput = document.getElementById('lifetime-input');
+        const setLifetimeButton = document.querySelector('button[onclick="setMessageLifetime()"]');
+
+        lifetimeSelect.addEventListener('change', () => {
+    const selectedValue = lifetimeSelect.value;
+    if (selectedValue === '') {
+        lifetimeInput.style.display = 'none';
+        lifetimeInput.disabled = true;
+        setLifetimeButton.style.display = 'none';
+        setLifetimeButton.disabled = true;
+    } else {
+        lifetimeInput.style.display = 'inline-block';
+        lifetimeInput.disabled = false;
+        setLifetimeButton.style.display = 'inline-block';
+        setLifetimeButton.disabled = false;
+        lifetimeInput.value = selectedValue;
+    }
+});
+
+        let currentUser = null;
+
+function setUsername() {
+    const usernameInput = document.getElementById('username-input');
+    const username = usernameInput.value.trim();
+    if (username) {
+        currentUser = username;
+        socket.emit('login', { username });
+        usernameInput.value = '';
+        usernameInput.disabled = true;
+        messageInput.disabled = false;
+        document.getElementById('image-input').disabled = false;
+        sendButton.disabled = false;
+        toggleLifetimeFields(true);
+       
+        setLifetimeButton.disabled = false;
+        document.getElementById('clear-messages-btn').style.display = 'inline-block';
+        document.getElementById('lifetime-input').style.display = 'inline-block'; // Показываем поле ввода времени удаления
+        document.querySelector('button[onclick="setMessageLifetime()"]').style.display = 'inline-block'; // Показываем кнопку
+    }
+}
+
+function toggleLifetimeFields(show) {
+    const lifetimeContainer = document.querySelector('.lifetime-container');
+    const lifetimeSelect = document.getElementById('lifetime-select');
+    const setLifetimeButton = document.querySelector('button[onclick="setMessageLifetime()"]');
+
+    if (show) {
+        lifetimeContainer.style.display = 'flex';
+        lifetimeSelect.disabled = false;
+        setLifetimeButton.disabled = false;
+    } else {
+        lifetimeContainer.style.display = 'none';
+        lifetimeSelect.disabled = true;
+        setLifetimeButton.disabled = true;
+    }
+}
+        
+function scrollToBottom() {
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+function clearMessages() {
+    if (currentUser) {
+        socket.emit('clear_messages', { username: currentUser });
+    }
+}
+
+function showFileUploadIndicator() {
+    const fileUploadIndicator = document.getElementById('file-upload-indicator');
+    fileUploadIndicator.style.display = 'inline';
+}
+
+function removeAllMessages() {
+    const messageElements = document.querySelectorAll('.message');
+    messageElements.forEach(messageElement => messageElement.remove());
+}
+
+function resetUI() {
+    toggleLifetimeFields(false);
+    currentUser = null;
+    
+    document.getElementById('username-input').disabled = false;
+    document.getElementById('username-input').value = '';
+    messageInput.disabled = true;
+    document.getElementById('image-input').disabled = true;
+    sendButton.disabled = true;
+    
+    setLifetimeButton.disabled = true;
+    document.getElementById('clear-messages-btn').style.display = 'none';
+    document.getElementById('lifetime-input').style.display = 'none'; // Скрываем поле ввода времени удаления
+    document.querySelector('button[onclick="setMessageLifetime()"]').style.display = 'none'; // Скрываем кнопку
+}
+
+socket.on('clear_messages', (systemMessage) => {
+    const messageElements = document.querySelectorAll('.message');
+    messageElements.forEach(messageElement => messageElement.remove());
+    removeAllMessages();
+    addMessageToDiv(systemMessage, Date.now() / 1000, 'Система', null);
+    resetUI();
+});
+
+socket.on('connect', () => {
+    console.log('Connected to server');
+    currentUser = null;  // Устанавливаем currentUser в null при подключении
+});
+
+let MESSAGE_LIFETIME = 60000; // Время жизни сообщения в миллисекундах по умолчанию
+
+socket.on('message_lifetime_updated', (lifetime) => {
+    MESSAGE_LIFETIME = lifetime * 1000;  // Обновляем значение MESSAGE_LIFETIME на клиентской стороне
+    console.log(`Время жизни сообщения обновлено: ${MESSAGE_LIFETIME / 1000} секунд`);
+});
+
+socket.on('new_message', (data) => {
+    console.log("Received new message:", data);
+    if (data.expired) {
+        // Удаление истекшего сообщения
+        const messageElements = document.querySelectorAll('.message');
+        for (const messageElement of messageElements) {
+            if (messageElement.textContent === `${data.username}: ${data.message}`) {
+                messageElement.remove();
+                break;
+            }
+        }
+    } else {
+        const now = new Date().getTime();
+        const expirationTime = data.timestamp * 1000 + MESSAGE_LIFETIME;
+        const remainingTime = expirationTime - now;
+
+        if (remainingTime > 0) {
+            const messageElement = addMessageToDiv(data.message, data.timestamp, data.username, data.image_url);
+            setTimeout(() => {
+                messageElement.remove();
+            }, remainingTime);
+        }
+    }
+});
+
+socket.on('expire_message', (message) => {
+    const messageElements = document.querySelectorAll('.message');
+    for (const messageElement of messageElements) {
+        if (messageElement.textContent === message) {
+            messageElement.remove();
+            break;
+        }
+    }
+});
+
+
+function addMessageToDiv(message, timestamp, username, imageUrl) {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message');
+            
+            if (username === currentUser) {
+                messageElement.classList.add('self');
+            } else {
+                messageElement.classList.add('other');
+            }
+
+            const messageTextElement = document.createElement('span');
+            messageTextElement.textContent = `${username}: ${message}`;
+            messageElement.appendChild(messageTextElement);
+
+            if (imageUrl) {
+                const imageElement = document.createElement('img');
+                imageElement.src = imageUrl;
+                messageElement.appendChild(imageElement);
+            }
+
+            const timerElement = document.createElement('span');
+            timerElement.classList.add('timer');
+            messageElement.appendChild(timerElement);
+
+            messagesDiv.appendChild(messageElement);
+            scrollToBottom();
+
+    const expirationTime = timestamp * 1000 + MESSAGE_LIFETIME;
+    const currentTime = new Date().getTime();
+    const remainingTime = expirationTime - currentTime;
+
+    const updateTimer = () => {
+        const remaining = Math.max(0, expirationTime - new Date().getTime());
+        const seconds = Math.floor(remaining / 1000);
+        timerElement.textContent = `${seconds}s`;
+
+        if (remaining > 0) {
+            requestAnimationFrame(updateTimer);
+        } else {
+            messageElement.remove();
+        }
+    };
+
+    updateTimer();
+
+    return messageElement;
+}
+
+
+function sendMessage() {
+    const message = messageInput.value.trim();
+    const imageInput = document.getElementById('image-input');
+    const file = imageInput.files[0];
+
+    if ((message || file) && currentUser) {
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const imageData = event.target.result;
+                socket.emit('send_message', { message, image: imageData, username: currentUser });
+                imageInput.value = ''; // Сбрасываем значение поля ввода файла
+                const fileUploadIndicator = document.getElementById('file-upload-indicator');
+                fileUploadIndicator.style.display = 'none'; // Скрываем индикатор загрузки файла после отправки
+            };
+            reader.readAsDataURL(file);
+        } else {
+            socket.emit('send_message', { message, username: currentUser });
+        }
+        messageInput.value = '';
+    }
+}
+
+function setMessageLifetime() {
+    const lifetimeSelect = document.getElementById('lifetime-select');
+    const lifetime = parseInt(lifetimeSelect.value, 10);
+    if (!isNaN(lifetime)) {
+        socket.emit('set_message_lifetime', { lifetime, username: currentUser });
+    }
+}
+
+function handleKeyDown(event) {
+    if (event.key === 'Enter') {
+        sendMessage();
+    }
+}
+</script>
+</body>
+</html>
